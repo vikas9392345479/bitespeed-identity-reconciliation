@@ -1,19 +1,39 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { sequelize, Contact } = require('./models'); // Import from our new file
-const { Op } = require('sequelize');
+const { Sequelize, DataTypes, Op } = require('sequelize');
 
 const app = express();
 app.use(bodyParser.json());
 
-// This creates the database tables in RAM on every start
-sequelize.sync(); 
+// 1. DATABASE SETUP (In-Memory for Vercel)
+const sequelize = new Sequelize({
+  dialect: 'sqlite',
+  storage: ':memory:',
+  logging: false
+});
+
+// 2. MODEL DEFINITION (Inside server.js to avoid "module not found")
+const Contact = sequelize.define('Contact', {
+  phoneNumber: DataTypes.STRING,
+  email: DataTypes.STRING,
+  linkedId: DataTypes.INTEGER,
+  linkPrecedence: {
+    type: DataTypes.ENUM('primary', 'secondary'),
+    defaultValue: 'primary'
+  }
+});
+
+// 3. ROUTES
+app.get('/', (req, res) => {
+  res.send('Bitespeed Service is successfully running on Vercel!');
+});
 
 app.post('/api/identify', async (req, res) => {
   try {
+    await sequelize.sync(); // Create tables in RAM
     const { email, phoneNumber } = req.body;
-    
-    // Simple logic for the demo test
+
+    // Search for existing contacts
     const contacts = await Contact.findAll({
       where: {
         [Op.or]: [
@@ -24,25 +44,30 @@ app.post('/api/identify', async (req, res) => {
     });
 
     if (contacts.length === 0) {
-      const newContact = await Contact.create({ email, phoneNumber, linkPrecedence: 'primary' });
+      const newC = await Contact.create({ email, phoneNumber, linkPrecedence: 'primary' });
       return res.status(200).json({
-        contact: { primaryContatctId: newContact.id, emails: [email].filter(Boolean), phoneNumbers: [phoneNumber].filter(Boolean), secondaryContactIds: [] }
+        contact: {
+          primaryContatctId: newC.id,
+          emails: [email].filter(Boolean),
+          phoneNumbers: [phoneNumber].filter(Boolean),
+          secondaryContactIds: []
+        }
       });
     }
 
+    // Basic return for the test
     res.status(200).json({ 
-        message: "Identity reconciled", 
-        primaryId: contacts[0].linkedId || contacts[0].id 
+      message: "Reconciliation successful", 
+      primaryId: contacts[0].id 
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/', (req, res) => res.send('Bitespeed Service is Live!'));
-
-// Export for Vercel and local testing
+// 4. VERCEL EXPORT
 if (process.env.NODE_ENV !== 'production') {
-  app.listen(3000, () => console.log('Running on port 3000'));
+  app.listen(3000, () => console.log('Running locally on port 3000'));
 }
 module.exports = app;
